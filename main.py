@@ -73,7 +73,7 @@ async def chat(request: Request):
 
         # 🔥 Step 1: Ask Claude
         response = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-3-haiku-latest",
             max_tokens=200,
             messages=[{
                 "role": "user",
