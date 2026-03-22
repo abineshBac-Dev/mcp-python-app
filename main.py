@@ -56,5 +56,3 @@ def health():
 client = anthropic.Anthropic(
     api_key=os.getenv("CLAUDE_API_KEY")
 )
-
-    return {"response": str(response)}
