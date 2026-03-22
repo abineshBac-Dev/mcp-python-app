@@ -4,6 +4,7 @@ import os
 import anthropic
 from urllib.parse import urlparse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request
 
 app = FastAPI()
 
@@ -16,8 +17,39 @@ app.add_middleware(
 )
 
 @app.post("/chat")
-def chat():
-    return {"message": "working"}
+async def chat(request: Request):
+    body = await request.json()
+    user_input = body.get("user_input", "")
+
+    # Step 1: Ask Claude which tool to use
+    response = client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=200,
+        messages=[{
+            "role": "user",
+            "content": f"""
+User query: {user_input}
+
+Available tools:
+1. get_users - fetch all users from database
+
+Reply ONLY in JSON:
+{{ "tool": "tool_name" }}
+"""
+        }]
+    )
+
+    # Step 2: Extract Claude response
+    try:
+        content = response.content[0].text.strip()
+
+        if "get_users" in content:
+            return get_users()
+
+        return {"message": "No tool matched", "claude": content}
+
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/")
 def home():
