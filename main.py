@@ -5,24 +5,27 @@ import anthropic
 from urllib.parse import urlparse
 from fastapi.middleware.cors import CORSMiddleware
 import json
+import re
 
 app = FastAPI()
 
-# ✅ CORS (allow frontend from Vercel)
+# =========================
+# CORS
+# =========================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # later restrict to your Vercel URL
+    allow_origins=["*"],  # later restrict to your Vercel domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Claude setup
+# =========================
+# CLAUDE SETUP
+# =========================
 client = anthropic.Anthropic(
     api_key=os.getenv("CLAUDE_API_KEY")
 )
-
-print(client.models.list())
 
 # =========================
 # DB CONNECTION
@@ -40,7 +43,7 @@ def get_connection():
             port=parsed.port
         )
     except Exception as e:
-        print("DB Connection Error:", str(e))
+        print("❌ DB Connection Error:", str(e))
         raise e
 
 # =========================
@@ -59,11 +62,11 @@ def get_users():
 
         return result
     except Exception as e:
-        print("DB Error:", str(e))
+        print("❌ DB Error:", str(e))
         return {"error": str(e)}
 
 # =========================
-# CHAT ENDPOINT (AI + TOOLS)
+# CHAT ENDPOINT
 # =========================
 @app.post("/chat")
 async def chat(request: Request):
@@ -71,9 +74,11 @@ async def chat(request: Request):
         body = await request.json()
         user_input = body.get("user_input", "")
 
-        print("User Input:", user_input)
+        print("🟢 User Input:", user_input)
 
-        # 🔥 Step 1: Ask Claude
+        # =========================
+        # STEP 1: Claude decision
+        # =========================
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=200,
@@ -85,13 +90,19 @@ User query: {user_input}
 Available tools:
 1. get_users - fetch all users from database
 
-Return ONLY valid JSON:
+IMPORTANT:
+- Return ONLY raw JSON
+- Do NOT use markdown
+- Do NOT use ```
+- Output format:
 {{ "tool": "get_users" }}
 """
             }]
         )
 
-        # 🔥 Step 2: Extract text safely
+        # =========================
+        # STEP 2: Extract response
+        # =========================
         content = ""
         for block in response.content:
             if hasattr(block, "text"):
@@ -99,19 +110,33 @@ Return ONLY valid JSON:
 
         content = content.strip()
 
-        print("Claude Raw Output:", content)
+        print("🟡 Claude Raw Output:", content)
 
-        # 🔥 Step 3: Parse JSON safely
+        # =========================
+        # STEP 3: Clean markdown
+        # =========================
+        content = re.sub(r"```json", "", content)
+        content = re.sub(r"```", "", content)
+        content = content.strip()
+
+        print("🟣 Cleaned Output:", content)
+
+        # =========================
+        # STEP 4: Parse JSON
+        # =========================
         try:
             parsed = json.loads(content)
             tool = parsed.get("tool")
-        except Exception:
+        except Exception as e:
+            print("❌ JSON Parse Error:", str(e))
             return {
                 "error": "Invalid JSON from Claude",
                 "claude_output": content
             }
 
-        # 🔥 Step 4: Tool routing
+        # =========================
+        # STEP 5: Tool routing
+        # =========================
         if tool == "get_users":
             data = get_users()
             return {
@@ -125,7 +150,7 @@ Return ONLY valid JSON:
         }
 
     except Exception as e:
-        print("CHAT ERROR:", str(e))
+        print("❌ CHAT ERROR:", str(e))
         return {"error": str(e)}
 
 # =========================
