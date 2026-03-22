@@ -2,6 +2,7 @@ from fastapi import FastAPI
 import mysql.connector
 import os
 import anthropic
+from urllib.parse import urlparse
 
 app = FastAPI()
 
@@ -11,12 +12,16 @@ def home():
 
 # DB connection (Railway env variables)
 def get_connection():
+    url = os.getenv("MYSQL_PUBLIC_URL")
+
+    parsed = urlparse(url)
+
     return mysql.connector.connect(
-        host=os.getenv("MYSQLHOST"),
-        user=os.getenv("MYSQLUSER"),
-        password=os.getenv("MYSQLPASSWORD"),
-        database=os.getenv("MYSQLDATABASE"),
-        port=int(os.getenv("MYSQLPORT"))
+        host=parsed.hostname,
+        user=parsed.username,
+        password=parsed.password,
+        database=parsed.path[1:],  # remove '/'
+        port=parsed.port
     )
 
 # Tool: get users
