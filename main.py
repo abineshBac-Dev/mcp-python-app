@@ -57,23 +57,4 @@ client = anthropic.Anthropic(
     api_key=os.getenv("CLAUDE_API_KEY")
 )
 
-/*
-@app.post("/chat")
-async def chat(user_input: str):
-    response = client.messages.create(
-        model="claude-3-haiku-20240307",
-        max_tokens=300,
-        messages=[{
-            "role": "user",
-            "content": f"""
-            User query: {user_input}
-            Available tools:
-            - get_users()
-
-            Decide tool in JSON:
-            """
-        }]
-    )
-*/
-
     return {"response": str(response)}
