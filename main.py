@@ -3,8 +3,21 @@ import mysql.connector
 import os
 import anthropic
 from urllib.parse import urlparse
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.post("/chat")
+def chat():
+    return {"message": "working"}
 
 @app.get("/")
 def home():
@@ -44,6 +57,7 @@ client = anthropic.Anthropic(
     api_key=os.getenv("CLAUDE_API_KEY")
 )
 
+/*
 @app.post("/chat")
 async def chat(user_input: str):
     response = client.messages.create(
@@ -60,5 +74,6 @@ async def chat(user_input: str):
             """
         }]
     )
+*/
 
     return {"response": str(response)}
