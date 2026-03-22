@@ -75,7 +75,7 @@ async def chat(request: Request):
 
         # 🔥 Step 1: Ask Claude
         response = client.messages.create(
-            model="claude-2.1",
+            model="claude-sonnet-4-6",
             max_tokens=200,
             messages=[{
                 "role": "user",
