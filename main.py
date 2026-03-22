@@ -5,6 +5,10 @@ import anthropic
 
 app = FastAPI()
 
+@app.get("/")
+def home():
+    return {"status": "running"}
+
 # DB connection (Railway env variables)
 def get_connection():
     return mysql.connector.connect(
@@ -18,10 +22,17 @@ def get_connection():
 # Tool: get users
 @app.get("/tool/get_users")
 def get_users():
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM users")
-    return cursor.fetchall()
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM users")
+        return cursor.fetchall()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 # Claude setup
 client = anthropic.Anthropic(
