@@ -66,6 +66,16 @@ def get_users():
         return {"error": str(e)}
 
 # =========================
+# HELPER: Extract Claude text
+# =========================
+def extract_text(response):
+    text = ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            text += block.text
+    return text.strip()
+
+# =========================
 # CHAT ENDPOINT
 # =========================
 @app.post("/chat")
@@ -77,56 +87,51 @@ async def chat(request: Request):
         print("🟢 User Input:", user_input)
 
         # =========================
-        # STEP 1: Claude decision
+        # STEP 1: Claude decides
         # =========================
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=200,
-            messages=[{
-                "role": "user",
-                "content": f"""
+        decision_prompt = f"""
 User query: {user_input}
 
 Available tools:
-1. get_users - fetch all users from database
 
-IMPORTANT:
-- Return ONLY raw JSON
-- Do NOT use markdown
-- Do NOT use ```
-- Output format:
-{{ "tool": "get_users" }}
+get_users:
+- Use when user asks:
+  - "show users"
+  - "list users"
+  - "how many users"
+  - "user data"
+- Returns list of users with id, name, email
+
+Rules:
+- If tool is needed → return:
+  {{ "tool": "get_users" }}
+- If NO tool needed → return:
+  {{ "answer": "your natural response" }}
+
+Return ONLY valid JSON.
 """
-            }]
+
+        decision_response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=200,
+            messages=[{"role": "user", "content": decision_prompt}]
         )
 
-        # =========================
-        # STEP 2: Extract response
-        # =========================
-        content = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                content += block.text
+        content = extract_text(decision_response)
 
-        content = content.strip()
+        print("🟡 Claude Raw:", content)
 
-        print("🟡 Claude Raw Output:", content)
-
-        # =========================
-        # STEP 3: Clean markdown
-        # =========================
+        # Clean markdown if any
         content = re.sub(r"```json", "", content)
-        content = re.sub(r"```", "", content)
-        content = content.strip()
+        content = re.sub(r"```", "", content).strip()
 
-        print("🟣 Cleaned Output:", content)
+        print("🟣 Cleaned:", content)
 
         # =========================
-        # STEP 4: Parse JSON
+        # STEP 2: Parse JSON
         # =========================
         try:
             parsed = json.loads(content)
-            tool = parsed.get("tool")
         except Exception as e:
             print("❌ JSON Parse Error:", str(e))
             return {
@@ -134,44 +139,56 @@ IMPORTANT:
                 "claude_output": content
             }
 
+        tool = parsed.get("tool")
+        answer = parsed.get("answer")
+
         # =========================
-        # STEP 5: Tool routing
+        # STEP 3: TOOL FLOW
         # =========================
         if tool == "get_users":
-		    data = get_users()
+            data = get_users()
 
-		    # 🔥 SECOND CALL → NLP RESPONSE
-		    final_response = client.messages.create(
-		        model="claude-sonnet-4-6",
-		        max_tokens=200,
-		        messages=[{
-		            "role": "user",
-		            "content": f"""
-		User question: {user_input}
+            final_prompt = f"""
+User question: {user_input}
 
-		Tool used: get_users
-		Tool result:
-		{data}
+Tool used: get_users
+Tool result:
+{data}
 
-		Now answer the user in a natural, human-friendly way.
-		"""
-		        }]
-		    )
+Instructions:
+- If user asked "how many", return count
+- If user asked "list/show", summarize users
+- Keep response short and natural
+"""
 
-		    # Extract text
-		    final_text = ""
-		    for block in final_response.content:
-		        if hasattr(block, "text"):
-		            final_text += block.text
+            final_response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=200,
+                messages=[{"role": "user", "content": final_prompt}]
+            )
 
-		    return {
-		        "tool_used": "get_users",
-		        "raw_data": data,
-		        "answer": final_text.strip()
-		    }
+            final_text = extract_text(final_response)
 
+            return {
+                "tool_used": "get_users",
+                "raw_data": data,
+                "answer": final_text
+            }
+
+        # =========================
+        # STEP 4: DIRECT NLP FLOW
+        # =========================
+        if answer:
+            return {
+                "tool_used": None,
+                "answer": answer
+            }
+
+        # =========================
+        # STEP 5: FALLBACK
+        # =========================
         return {
-            "message": "No valid tool selected",
+            "message": "No valid response",
             "claude_output": content
         }
 
