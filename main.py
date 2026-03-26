@@ -138,11 +138,37 @@ IMPORTANT:
         # STEP 5: Tool routing
         # =========================
         if tool == "get_users":
-            data = get_users()
-            return {
-                "tool_used": "get_users",
-                "data": data
-            }
+		    data = get_users()
+
+		    # 🔥 SECOND CALL → NLP RESPONSE
+		    final_response = client.messages.create(
+		        model="claude-sonnet-4-6",
+		        max_tokens=200,
+		        messages=[{
+		            "role": "user",
+		            "content": f"""
+		User question: {user_input}
+
+		Tool used: get_users
+		Tool result:
+		{data}
+
+		Now answer the user in a natural, human-friendly way.
+		"""
+		        }]
+		    )
+
+		    # Extract text
+		    final_text = ""
+		    for block in final_response.content:
+		        if hasattr(block, "text"):
+		            final_text += block.text
+
+		    return {
+		        "tool_used": "get_users",
+		        "raw_data": data,
+		        "answer": final_text.strip()
+		    }
 
         return {
             "message": "No valid tool selected",
