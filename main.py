@@ -206,3 +206,100 @@ def home():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+@app.get("/init-db")
+def init_db():
+    try:
+        conn = get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+            CREATE TABLE `CONSIGNMENT` (
+              `ConsignmentKey` bigint(20) NOT NULL AUTO_INCREMENT,
+              `Tracking_Number` varchar(50) NOT NULL,
+              `CN_Type` varchar(25) DEFAULT NULL,
+              `Reference_No` varchar(100) DEFAULT NULL,
+              `Customer_Code` varchar(25) DEFAULT NULL,
+              `Customer_Name` varchar(100) DEFAULT NULL,
+              `Sender_Name` varchar(100) DEFAULT NULL,
+              `Origin_City` varchar(50) DEFAULT NULL,
+              `Origin_Pincode` varchar(20) DEFAULT NULL,
+              `Origin_Branch_Code` varchar(20) DEFAULT NULL,
+              `Origin_Branch_Name` varchar(100) DEFAULT NULL,
+              `Origin_Zone` varchar(100) DEFAULT NULL,
+              `Origin_Ro` varchar(100) DEFAULT NULL,
+              `Destination_City` varchar(50) DEFAULT NULL,
+              `Destination_Pincode` varchar(20) DEFAULT NULL,
+              `Destination_Branch_Code` varchar(20) DEFAULT NULL,
+              `Destination_Branch_Name` varchar(50) DEFAULT NULL,
+              `Destination_Zone` varchar(100) DEFAULT NULL,
+              `Destination_Ro` varchar(100) DEFAULT NULL,
+              `BookingTs` datetime DEFAULT NULL,
+              `BookingType` varchar(20) DEFAULT NULL,
+              `Service_Code` varchar(20) DEFAULT NULL,
+              `Service_Name` varchar(50) DEFAULT NULL,
+              `Service_Product_Name` varchar(25) DEFAULT NULL,
+              `Packet_Manifest_Number` varchar(25) DEFAULT NULL,
+              `Bag_Manifest_Number` varchar(20) DEFAULT NULL,
+              `Dispatch_Number` int(11) DEFAULT NULL,
+              `Mode` varchar(20) DEFAULT NULL,
+              `Ops_EDD` datetime DEFAULT NULL,
+              `Ops_REDD` datetime DEFAULT NULL,
+              `Cust_Prom_EDD` datetime DEFAULT NULL,
+              `Cust_Prom_REDD` datetime DEFAULT NULL,
+              `Ops_EDD_Parameters` varchar(20) DEFAULT NULL,
+              `Cust_EDD_Parameters` varchar(20) DEFAULT NULL,
+              `Current_Status_Code` varchar(20) DEFAULT NULL,
+              `Current_StatusTs` datetime DEFAULT NULL,
+              `Current_Hub_Code` varchar(15) DEFAULT NULL,
+              `Current_Hub_Name` varchar(100) DEFAULT NULL,
+              `Current_Location` varchar(100) DEFAULT NULL,
+              `Current_Location_Code` varchar(20) DEFAULT NULL,
+              `Receiver_Name` varchar(70) DEFAULT NULL,
+              `ReceiverTs` datetime DEFAULT NULL,
+              `Receiver_Location` varchar(70) DEFAULT NULL,
+              `Relationship` varchar(70) DEFAULT NULL,
+              `Delivered_By_Hub_Type` varchar(15) DEFAULT NULL,
+              `Delivered_By_Hub_Code` varchar(15) DEFAULT NULL,
+              `Delivered_By_Hub_Name` varchar(70) DEFAULT NULL,
+              `Delivered_By_Biker_Code` varchar(15) DEFAULT NULL,
+              `Delivered_By_Biker_Name` varchar(70) DEFAULT NULL,
+              `Delivered_By_Mobile` varchar(25) DEFAULT NULL,
+              `Delivered_By_MailId` varchar(70) DEFAULT NULL,
+              `DeliveredTs` datetime DEFAULT NULL,
+              `RTO_Tracking_Number` varchar(15) DEFAULT NULL,
+              `Parent_Tracking_Number` varchar(15) DEFAULT NULL,
+              `Movement_Type` varchar(15) DEFAULT NULL,
+              `Return_Type` varchar(15) DEFAULT NULL,
+              `Reason_Code` varchar(25) DEFAULT NULL,
+              `Reason_Description` varchar(250) DEFAULT NULL,
+              `Feedback_Rating` varchar(10) DEFAULT NULL,
+              `CTBS_Entry_Time` datetime DEFAULT NULL,
+              `CreateTs` timestamp NOT NULL DEFAULT current_timestamp(),
+              `CreatedBy` varchar(50) DEFAULT NULL,
+              `ModifyTs` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+              `ModifiedBy` varchar(50) DEFAULT NULL,
+              PRIMARY KEY (`ConsignmentKey`),
+              UNIQUE KEY `Tracking_Number` (`Tracking_Number`),
+              KEY `idx_CreateTs` (`CreateTs`),
+              KEY `idx_ModifyTs` (`ModifyTs`),
+              KEY `idx_current_status_code` (`Current_Status_Code`),
+              KEY `idx_Destination_Branch_Code` (`Destination_Branch_Code`),
+              KEY `idx_Packet_Manifest_Number` (`Packet_Manifest_Number`),
+              KEY `idx_bag_packet_manifest` (`Bag_Manifest_Number`,`Packet_Manifest_Number`),
+              KEY `idx_bookingts` (`BookingTs`),
+              KEY `idx_ref_cus` (`Reference_No`,`Customer_Code`),
+              KEY `idx_RTO_Tr` (`RTO_Tracking_Number`),
+              KEY `idx_cons_RTO` (`ConsignmentKey`,`RTO_Tracking_Number`),
+              KEY `idx_Parent_Tracking_Number` (`Parent_Tracking_Number`),
+              KEY `idx_test` (`Tracking_Number`,`Delivered_By_Hub_Code`,`Parent_Tracking_Number`),
+              KEY `idx_disN` (`Dispatch_Number`),
+              KEY `Idx_customer` (`Customer_Code`)
+            )
+            """)
+        conn.commit()
+        conn.close()
+
+        return {"status": "Table created successfully"}
+
+    except Exception as e:
+        return {"error": str(e)}
