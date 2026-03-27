@@ -193,7 +193,7 @@ If no tool:
 
         decision_response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=300,
+            max_tokens=1000,
             messages=[{"role": "user", "content": decision_prompt}]
         )
 
@@ -262,7 +262,7 @@ Instructions:
 
         final_response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=300,
+            max_tokens=10000,
             messages=[{"role": "user", "content": final_prompt}]
         )
 
