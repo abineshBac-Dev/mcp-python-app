@@ -253,7 +253,7 @@ If no tool:
 
         decision_response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2000,
+            max_tokens=1000,
             #messages=[{"role": "user", "content": decision_prompt}]
             messages = chat_history[-10:] + [
                 {"role": "user", "content": decision_prompt}
