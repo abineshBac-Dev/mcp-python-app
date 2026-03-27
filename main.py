@@ -169,10 +169,30 @@ SQL RULES:
 - Prefer SELECT for read queries
 
 LOGIC:
-- If user asks:
-  → "list tables", "show tables" → use get_schema_metadata
-  → "table structure" → use get_schema_metadata
-  → data query → generate SQL → use execute_sql
+1. For any database operation:
+   - SELECT → MUST call execute_sql
+   - INSERT → MUST call execute_sql
+   - UPDATE → MUST call execute_sql
+   - DELETE → MUST call execute_sql
+   - ALTER → MUST call execute_sql
+   - CREATE → MUST call execute_sql
+2. If user asks:
+   - "list tables", "show tables", "schema", "table structure"
+     → call get_schema_metadata
+3. If user asks ANYTHING related to data:
+   → generate SQL
+   → call execute_sql
+4. If request is NOT related to database:
+   → return "answer"
+5. SAFETY RULES:
+   - DELETE without WHERE → DO NOT execute → ask for confirmation
+   - UPDATE without WHERE → DO NOT execute → ask for confirmation
+6. If user says:
+   "insert sample data"
+   → auto-generate realistic values and execute
+7. If query fails:
+   → fix SQL and retry once
+
 
 OUTPUT JSON ONLY:
 
@@ -250,8 +270,9 @@ Instructions:
 - If SELECT:
   → Summarize results
 
-- If INSERT/UPDATE/DELETE/ALTER/CREATE:
-  → Confirm operation clearly
+- If INSERT → confirm how many rows inserted
+- If UPDATE → confirm rows updated
+- If DELETE → confirm rows deleted
 
 - If user asked "how many":
   → return count only
