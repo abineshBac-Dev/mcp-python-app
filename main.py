@@ -10,6 +10,13 @@ import re
 app = FastAPI()
 
 # =========================
+# GLOBAL STATE (single-user for now)
+# =========================
+pending_action = None
+chat_history = []
+CONFIRM_WORDS = ["yes", "yes proceed", "confirm", "go ahead"]
+
+# =========================
 # CORS
 # =========================
 app.add_middleware(
@@ -84,12 +91,14 @@ def get_schema_metadata():
 # =========================
 def is_safe_query(query: str):
     query_lower = query.lower()
-
     forbidden = ["drop", "truncate"]
-    for word in forbidden:
-        if word in query_lower:
-            return False
-    return True
+    return not any(word in query_lower for word in forbidden)
+
+    #forbidden = ["drop", "truncate"]
+    #for word in forbidden:
+    #    if word in query_lower:
+    #        return False
+    #return True
 
 def execute_sql(query: str):
     try:
@@ -130,11 +139,42 @@ def extract_text(response):
 # =========================
 @app.post("/chat")
 async def chat(request: Request):
+    global pending_action, chat_history
     try:
         body = await request.json()
         user_input = body.get("user_input", "")
+        user_lower = user_input.lower().strip()
 
         print("🟢 User:", user_input)
+
+        # =========================
+        # HANDLE CONFIRMATION FIRST
+        # =========================
+        if user_lower in CONFIRM_WORDS:
+            if pending_action:
+                print("🟠 Executing pending action...")
+        
+                sql = pending_action["query"]
+                pending_action = None
+        
+                data = execute_sql(sql)
+                return {
+                    "tool_used": "execute_sql",
+                    "data": data,
+                    "answer": f"✅ Done. Rows affected: {data.get('affected_rows', 0)}"
+                }
+            else:
+                return {
+                    "answer": "Nothing pending to confirm."
+                }
+
+        # =========================
+        # STORE USER MESSAGE
+        # =========================
+        chat_history.append({
+            "role": "user",
+            "content": user_input
+        })
 
         # =========================
         # STEP 1: DECISION
@@ -213,16 +253,23 @@ If no tool:
 
         decision_response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1000,
-            messages=[{"role": "user", "content": decision_prompt}]
+            max_tokens=10000,
+            #messages=[{"role": "user", "content": decision_prompt}]
+            messages = chat_history[-10:] + [
+                {"role": "user", "content": decision_prompt}
+            ]
         )
 
         content = extract_text(decision_response)
-
         content = re.sub(r"```json", "", content)
         content = re.sub(r"```", "", content).strip()
 
         print("🟡 Claude Decision:", content)
+
+        chat_history.append({
+            "role": "assistant",
+            "content": content
+        })
 
         try:
             parsed = json.loads(content)
@@ -241,6 +288,32 @@ If no tool:
 
         elif tool == "execute_sql":
             query = tool_input.get("query")
+            #data = execute_sql(query)
+            if not query:
+                return {"error": "No query provided"}
+                
+            query_lower = query.lower()
+            
+            # =========================
+            # SAFETY CHECK
+            # =========================
+            if ("delete" in query_lower or "update" in query_lower):
+                if "where" not in query_lower:
+                    return {
+                        "answer": "❌ Unsafe query blocked (missing WHERE clause)"
+                    }
+        
+                # STORE pending action instead of executing
+                pending_action = {
+                    "type": "write",
+                    "query": query
+                }
+        
+                return {
+                    "answer": "⚠️ This will modify data. Type 'yes proceed' to confirm."
+                }
+        
+            # SAFE → EXECUTE
             data = execute_sql(query)
 
         elif answer:
@@ -256,7 +329,6 @@ If no tool:
         # =========================
         final_prompt = f"""
 User question: {user_input}
-
 Tool used: {tool}
 
 Tool result:
@@ -297,27 +369,6 @@ Instructions:
 
     except Exception as e:
         print("❌ ERROR:", str(e))
-        return {"error": str(e)}
-
-        # =========================
-        # STEP 4: DIRECT NLP FLOW
-        # =========================
-        if answer:
-            return {
-                "tool_used": None,
-                "answer": answer
-            }
-
-        # =========================
-        # STEP 5: FALLBACK
-        # =========================
-        return {
-            "message": "No valid response",
-            "claude_output": content
-        }
-
-    except Exception as e:
-        print("❌ CHAT ERROR:", str(e))
         return {"error": str(e)}
 
 # =========================
