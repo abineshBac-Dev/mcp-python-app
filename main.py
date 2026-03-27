@@ -29,87 +29,6 @@ client = anthropic.Anthropic(
 
 # =========================
 # DB CONNECTION
-# =========================
-def get_connection():
-    try:
-        url = os.getenv("MYSQL_PUBLIC_URL")
-        parsed = urlparse(url)
-
-        return mysql.connector.connect(
-            host=parsed.hostname,
-            user=parsed.username,
-            password=parsed.password,
-            database=parsed.path[1:],
-            port=parsed.port
-        )
-    except Exception as e:
-        print("❌ DB Connection Error:", str(e))
-        raise e
-
-# =========================
-# TOOL: GET USERS
-# =========================
-def get_users():
-    try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-
-        cursor.execute("SELECT * FROM users")
-        result = cursor.fetchall()
-
-        cursor.close()
-        conn.close()
-
-        return result
-    except Exception as e:
-        print("❌ DB Error:", str(e))
-        return {"error": str(e)}
-
-# =========================
-# HELPER: Extract Claude text
-# =========================
-def extract_text(response):
-    text = ""
-    for block in response.content:
-        if hasattr(block, "text"):
-            text += block.text
-    return text.strip()
-
-# =========================
-# CHAT ENDPOINT
-# =========================
-@app.post("/chat")
-async def chat(request: Request):
-    try:
-        body = await request.json()
-        user_input = body.get("user_input", "")
-
-        print("🟢 User Input:", user_input)
-
-        # =========================
-        # STEP 1: Claude decides
-        # =========================
-        decision_prompt = f"""
-User query: {user_input}
-
-Available tools:
-
-get_users:
-- Use when user asks:
-  - "show users"
-  - "list users"
-  - "how many users"
-  - "user data"
-- Returns list of users with id, name, email
-
-Rules:
-- If tool is needed → return:
-  {{ "tool": "get_users" }}
-- If NO tool needed → return:
-  {{ "answer": "your natural response" }}
-
-Return ONLY valid JSON.
-"""
 
         decision_response = client.messages.create(
             model="claude-sonnet-4-6",
@@ -174,6 +93,315 @@ Instructions:
                 "raw_data": data,
                 "answer": final_text
             }
+
+# =========================
+def get_connection():
+    try:
+        url = os.getenv("MYSQL_PUBLIC_URL")
+        parsed = urlparse(url)
+
+        return mysql.connector.connect(
+            host=parsed.hostname,
+            user=parsed.username,
+            password=parsed.password,
+            database=parsed.path[1:],
+            port=parsed.port
+        )
+
+        decision_response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=200,
+            messages=[{"role": "user", "content": decision_prompt}]
+        )
+
+        content = extract_text(decision_response)
+
+        print("🟡 Claude Raw:", content)
+
+        # Clean markdown if any
+        content = re.sub(r"```json", "", content)
+        content = re.sub(r"```", "", content).strip()
+
+        print("🟣 Cleaned:", content)
+
+        # =========================
+        # STEP 2: Parse JSON
+        # =========================
+        try:
+            parsed = json.loads(content)
+        except Exception as e:
+            print("❌ JSON Parse Error:", str(e))
+            return {
+                "error": "Invalid JSON from Claude",
+                "claude_output": content
+            }
+
+        tool = parsed.get("tool")
+        answer = parsed.get("answer")
+
+        # =========================
+        # STEP 3: TOOL FLOW
+        # =========================
+        if tool == "get_users":
+            data = get_users()
+
+            final_prompt = f"""
+User question: {user_input}
+
+Tool used: get_users
+Tool result:
+{data}
+
+Instructions:
+- If user asked "how many", return count
+- If user asked "list/show", summarize users
+- Keep response short and natural
+"""
+
+            final_response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=200,
+                messages=[{"role": "user", "content": final_prompt}]
+            )
+
+            final_text = extract_text(final_response)
+
+            return {
+                "tool_used": "get_users",
+                "raw_data": data,
+                "answer": final_text
+            }
+
+    except Exception as e:
+        print("❌ DB Connection Error:", str(e))
+        raise e
+
+# =========================
+# TOOL 1: SCHEMA METADATA
+# =========================
+def get_schema_metadata():
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("SHOW TABLES")
+        tables = [list(row.values())[0] for row in cursor.fetchall()]
+
+        schema = {}
+
+        for table in tables:
+            cursor.execute(f"DESCRIBE {table}")
+            columns = cursor.fetchall()
+
+            cursor.execute(f"SHOW INDEX FROM {table}")
+            indexes = cursor.fetchall()
+
+            schema[table] = {
+                "columns": columns,
+                "indexes": indexes
+            }
+
+        cursor.close()
+        conn.close()
+
+        return schema
+
+    except Exception as e:
+        return {"error": str(e)}
+
+# =========================
+# TOOL 2: SAFE SQL EXECUTION
+# =========================
+def is_safe_query(query: str):
+    query_lower = query.lower()
+
+    forbidden = ["drop", "truncate"]
+    for word in forbidden:
+        if word in query_lower:
+            return False
+
+    forbidden_patterns = [
+        r";",
+        r"--",
+        r"/\*",
+        r"\*/"
+    ]
+
+    for pattern in forbidden_patterns:
+        if re.search(pattern, query_lower):
+            return False
+
+    return True
+
+def execute_sql(query: str):
+    try:
+        if not is_safe_query(query):
+            return {"error": "Unsafe query blocked"}
+
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute(query)
+
+        if query.strip().lower().startswith("select"):
+            result = cursor.fetchall()
+        else:
+            conn.commit()
+            result = {"affected_rows": cursor.rowcount}
+
+        cursor.close()
+        conn.close()
+
+        return result
+
+    except Exception as e:
+        return {"error": str(e)}
+
+# =========================
+# HELPER: Extract Claude text
+# =========================
+def extract_text(response):
+    text = ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            text += block.text
+    return text.strip()
+
+# =========================
+# CHAT ENDPOINT
+# =========================
+@app.post("/chat")
+async def chat(request: Request):
+    try:
+        body = await request.json()
+        user_input = body.get("user_input", "")
+
+        print("🟢 User:", user_input)
+
+        # =========================
+        # STEP 1: DECISION
+        # =========================
+        decision_prompt = f"""
+You are a MySQL assistant.
+
+User query:
+{user_input}
+
+Capabilities:
+- Query ANY table dynamically
+- Perform SELECT, INSERT, UPDATE, DELETE, ALTER, CREATE
+- Handle JOINs and indexes
+
+Available tools:
+
+1. get_schema_metadata
+2. execute_sql
+
+STRICT RULES:
+- NEVER use DROP, TRUNCATE
+- Only safe SQL allowed
+- Prefer SELECT unless modification is requested
+- Use indexes when possible
+- Add LIMIT 100 for large results
+
+PROCESS:
+1. If schema unknown → call get_schema_metadata
+2. Generate optimized SQL
+3. Call execute_sql
+
+OUTPUT JSON ONLY:
+
+If tool needed:
+{{
+  "tool": "tool_name",
+  "input": {{
+    "query": "SQL query",
+    "reason": "why needed"
+  }}
+}}
+
+If no tool:
+{{
+  "answer": "your natural response"
+}}
+"""
+
+        decision_response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            messages=[{"role": "user", "content": decision_prompt}]
+        )
+
+        content = extract_text(decision_response)
+
+        content = re.sub(r"```json", "", content)
+        content = re.sub(r"```", "", content).strip()
+
+        print("🟡 Claude Decision:", content)
+
+        try:
+            parsed = json.loads(content)
+        except:
+            return {"error": "Invalid JSON", "raw": content}
+
+        tool = parsed.get("tool")
+        tool_input = parsed.get("input", {})
+        answer = parsed.get("answer")
+
+        # =========================
+        # STEP 2: TOOL EXECUTION
+        # =========================
+        if tool == "get_schema_metadata":
+            data = get_schema_metadata()
+
+        elif tool == "execute_sql":
+            query = tool_input.get("query")
+            data = execute_sql(query)
+
+        elif answer:
+            return {"tool_used": None, "answer": answer}
+
+        else:
+            return {"error": "Invalid tool decision"}
+
+        print("🟣 Tool Output:", data)
+
+        # =========================
+        # STEP 3: FINAL RESPONSE
+        # =========================
+        final_prompt = f"""
+User question: {user_input}
+
+Tool used: {tool}
+
+Tool result:
+{data}
+
+Instructions:
+- If SELECT → summarize results clearly
+- If INSERT/UPDATE/DELETE/ALTER/CREATE → confirm operation
+- If user asked "how many", return count
+- If empty → say no data found
+- Keep response short and natural
+"""
+
+        final_response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            messages=[{"role": "user", "content": final_prompt}]
+        )
+
+        final_text = extract_text(final_response)
+
+        return {
+            "tool_used": tool,
+            "data": data,
+            "answer": final_text
+        }
+
+    except Exception as e:
+        print("❌ ERROR:", str(e))
+        return {"error": str(e)}
 
         # =========================
         # STEP 4: DIRECT NLP FLOW
