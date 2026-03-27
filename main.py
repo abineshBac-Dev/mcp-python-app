@@ -169,10 +169,7 @@ Available tools:
 
 STRICT RULES:
 - NEVER use DROP, TRUNCATE
-- Only safe SQL allowed
-- Prefer SELECT unless modification is requested
 - Use indexes when possible
-- Add LIMIT 100 for large results
 
 PROCESS:
 1. If schema unknown → call get_schema_metadata
