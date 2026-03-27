@@ -89,18 +89,6 @@ def is_safe_query(query: str):
     for word in forbidden:
         if word in query_lower:
             return False
-
-    forbidden_patterns = [
-        r";",
-        r"--",
-        r"/\*",
-        r"\*/"
-    ]
-
-    for pattern in forbidden_patterns:
-        if re.search(pattern, query_lower):
-            return False
-
     return True
 
 def execute_sql(query: str):
@@ -152,7 +140,7 @@ async def chat(request: Request):
         # STEP 1: DECISION
         # =========================
         decision_prompt = f"""
-You are a MySQL assistant.
+You are a helpful backend data assistant.
 
 User query:
 {user_input}
@@ -165,16 +153,26 @@ Capabilities:
 Available tools:
 
 1. get_schema_metadata
+    - Returns all tables, columns, and indexes
 2. execute_sql
+    - Executes SQL queries
 
-STRICT RULES:
+IMPORTANT RULES:
+- Do NOT introduce yourself
+- Do NOT mention databases unless asked
+- Be direct and natural
+
+SQL RULES:
 - NEVER use DROP, TRUNCATE
-- Use indexes when possible
+- SHOW TABLES is allowed
+- DESCRIBE table is allowed
+- Prefer SELECT for read queries
 
-PROCESS:
-1. If schema unknown → call get_schema_metadata
-2. Generate optimized SQL
-3. Call execute_sql
+LOGIC:
+- If user asks:
+  → "list tables", "show tables" → use get_schema_metadata
+  → "table structure" → use get_schema_metadata
+  → data query → generate SQL → use execute_sql
 
 OUTPUT JSON ONLY:
 
@@ -182,8 +180,8 @@ If tool needed:
 {{
   "tool": "tool_name",
   "input": {{
-    "query": "SQL query",
-    "reason": "why needed"
+    "query": "SQL query if needed",
+    "reason": "why this tool"
   }}
 }}
 
@@ -245,11 +243,21 @@ Tool result:
 {data}
 
 Instructions:
-- If SELECT → summarize results clearly
-- If INSERT/UPDATE/DELETE/ALTER/CREATE → confirm operation
-- If user asked "how many", return count
-- If empty → say no data found
+
+- If schema data:
+  → List only table names clearly
+
+- If SELECT:
+  → Summarize results
+
+- If INSERT/UPDATE/DELETE/ALTER/CREATE:
+  → Confirm operation clearly
+
+- If user asked "how many":
+  → return count only
+
 - Keep response short and natural
+- Do NOT mention internal tools
 """
 
         final_response = client.messages.create(
